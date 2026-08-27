@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# local artifacts
+icon_preview.png
+*.log
+
+# IDE
+.idea/
+.vscode/
