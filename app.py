@@ -288,9 +288,13 @@ def spawn_proxy():
         env.pop("OPENAI_TARGET_API_URL", None)
     env.pop("ANTHROPIC_BASE_URL", None)
     env.pop("OPENAI_BASE_URL", None)
+    # CREATE_NO_WINDOW (not DETACHED): the uv-tool trampoline spawns a child
+    # python that would otherwise create a visible console; with a hidden
+    # console inherited by the whole tree no window ever flashes, and the
+    # proxy outlives this app.
     proc = subprocess.Popen(
         [str(HEADROOM_EXE), "proxy", "--port", str(PORT)],
-        creationflags=DETACHED, stdin=subprocess.DEVNULL,
+        creationflags=NO_WINDOW, stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
     state = load_state()
     state["proxy_pid"] = proc.pid
