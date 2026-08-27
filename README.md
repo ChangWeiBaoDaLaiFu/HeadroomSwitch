@@ -4,6 +4,10 @@
 
 > Not affiliated with headroomlabs-ai. This is an independent community tool that drives the open-source [`headroom`](https://github.com/headroomlabs-ai/headroom) CLI.
 
+![screenshot](screenshots/main.png)
+
+English | [中文](#特性)
+
 ## 特性
 
 - 🔍 **自动扫描**：启动时检测本机的 Claude Code / Codex / OpenCode（CLI 与桌面版均可识别）

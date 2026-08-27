@@ -35,6 +35,9 @@ DEFAULT_CONFIG = {
     "headroom_path": "",      # optional override of the headroom CLI path
 }
 
+APP_VERSION = "1.0.0"
+REPO_URL = "https://github.com/ChangWeiBaoDaLaiFu/HeadroomSwitch"
+
 
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
@@ -440,6 +443,11 @@ class Api:
         webbrowser.open(f"http://127.0.0.1:{PORT}/dashboard")
         return {"ok": True}
 
+    def open_url(self, url):
+        if url.startswith("http://") or url.startswith("https://"):
+            webbrowser.open(url)
+        return {"ok": True}
+
     def get_config(self):
         return {"port": PORT, "network_proxy": CONFIG.get("network_proxy", "auto")}
 
@@ -598,6 +606,7 @@ padding:7px 18px;font-size:12.5px;cursor:pointer}
   <div class="hright">
     <div class="pill" id="proxypill"><span class="dot" id="proxydot"></span><span id="proxytext">检测中…</span></div>
     <button class="linkbtn" onclick="openSettings()">设置</button>
+    <button class="linkbtn" onclick="openAbout()">关于</button>
   </div>
 </header>
 <div id="banner">未检测到 <code>headroom</code> CLI，请先安装：<code>uv tool install "headroom-ai[all]"</code> 或 <code>pip install "headroom-ai[all]"</code>（也可在设置中指定路径）</div>
@@ -609,7 +618,7 @@ padding:7px 18px;font-size:12.5px;cursor:pointer}
 </footer>
 <div id="toast"></div>
 <div id="modal">
-  <div class="mcard">
+  <div class="mcard" id="m_settings">
     <h3>设置</h3>
     <label>本地代理端口</label>
     <input id="cfg_port" type="number" min="1" max="65535">
@@ -624,6 +633,16 @@ padding:7px 18px;font-size:12.5px;cursor:pointer}
       <button class="linkbtn" onclick="closeModal()">取消</button>
       <button class="primary" onclick="saveCfg()">保存</button>
     </div>
+  </div>
+  <div class="mcard" id="m_about" style="display:none">
+    <h3>关于 HeadroomSwitch</h3>
+    <div class="about">
+      <p><b>HeadroomSwitch v__VER__</b></p>
+      <p>为 <a href="javascript:void(0)" onclick="pywebview.api.open_url('__HEADROOM_URL__')">Headroom</a> 设计的开源 GUI 管理工具：扫描本机 AI Agent，一键开关上下文压缩代理，关闭自动还原。</p>
+      <p>本项目为独立社区工具，与 headroomlabs-ai 无关。</p>
+      <p>项目主页：<a href="javascript:void(0)" onclick="pywebview.api.open_url('__REPO_URL__')">GitHub</a> · License: MIT</p>
+    </div>
+    <div class="mrow"><button class="primary" onclick="closeModal()">关闭</button></div>
   </div>
 </div>
 <script>
@@ -677,18 +696,26 @@ async function onRestart(id,name,btn){
   btn.disabled=false;btn.textContent='重启 '+name;
   refresh();
 }
-async function openSettings(){
-  const c=await pywebview.api.get_config();
-  document.getElementById('cfg_port').value=c.port;
-  const m=c.network_proxy;
-  if(m==='auto'||m==='direct'){document.getElementById('cfg_mode').value=m;
-    document.getElementById('cfg_custom').style.display='none';}
-  else{document.getElementById('cfg_mode').value='custom';
-    document.getElementById('cfg_custom').style.display='block';
-    document.getElementById('cfg_custom').value=m;}
+function closeModal(){document.getElementById('modal').classList.remove('open');}
+function openAbout(){
+  document.getElementById('m_settings').style.display='none';
+  document.getElementById('m_about').style.display='block';
   document.getElementById('modal').classList.add('open');
 }
-function closeModal(){document.getElementById('modal').classList.remove('open');}
+function openSettings(){
+  document.getElementById('m_about').style.display='none';
+  document.getElementById('m_settings').style.display='block';
+  pywebview.api.get_config().then(c=>{
+    document.getElementById('cfg_port').value=c.port;
+    const m=c.network_proxy;
+    if(m==='auto'||m==='direct'){document.getElementById('cfg_mode').value=m;
+      document.getElementById('cfg_custom').style.display='none';}
+    else{document.getElementById('cfg_mode').value='custom';
+      document.getElementById('cfg_custom').style.display='block';
+      document.getElementById('cfg_custom').value=m;}
+    document.getElementById('modal').classList.add('open');
+  });
+}
 function modeChanged(){
   const custom=document.getElementById('cfg_mode').value==='custom';
   document.getElementById('cfg_custom').style.display=custom?'block':'none';
@@ -706,6 +733,11 @@ window.addEventListener('DOMContentLoaded',()=>{refresh();setInterval(refresh,25
 </script>
 </body>
 </html>"""
+
+
+HTML = HTML.replace("__VER__", APP_VERSION) \
+           .replace("__HEADROOM_URL__", "https://github.com/headroomlabs-ai/headroom") \
+           .replace("__REPO_URL__", REPO_URL)
 
 
 def _single_instance():
