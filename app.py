@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
 APP_NAME = "HeadroomSwitch"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 REPO_URL = "https://github.com/ChangWeiBaoDaLaiFu/HeadroomSwitch"
 
 
@@ -468,6 +468,49 @@ RESTARTS = {
                "kind": "exe", "label": "Cursor"},
 }
 
+# --------------------------------------------------- extra (wrap) agents ----
+# CLI tools that headroom integrates by launching wrapped sessions
+# (`headroom wrap <tool>`). No durable config edit -> one-click session
+# launcher instead of a toggle.
+EXTRA_AGENTS = [
+    {"id": "aider", "name": "Aider", "wrap": "aider", "scope": "CLI",
+     "icon": "A", "color": "#f59e0b", "paths": ["~/.aider.conf.yml", "~/.aider"]},
+    {"id": "grok", "name": "Grok CLI", "wrap": "grok", "scope": "CLI",
+     "icon": "G", "color": "#111827", "paths": ["~/.grok"]},
+    {"id": "goose", "name": "Goose", "wrap": "goose", "scope": "CLI",
+     "icon": "G", "color": "#1f2937", "paths": ["~/.config/goose", "~/.goose"]},
+    {"id": "openhands", "name": "OpenHands", "wrap": "openhands", "scope": "CLI",
+     "icon": "O", "color": "#f97316", "paths": ["~/.openhands"]},
+    {"id": "vibe", "name": "Mistral Vibe", "wrap": "vibe", "scope": "CLI",
+     "icon": "V", "color": "#fb7185", "paths": ["~/.vibe", "~/.mistral"]},
+    {"id": "omp", "name": "Oh My Pi", "wrap": "omp", "scope": "CLI",
+     "icon": "P", "color": "#8b5cf6", "paths": ["~/.omp"]},
+    {"id": "kimi", "name": "Kimi CLI", "wrap": "kimi", "scope": "CLI",
+     "icon": "K", "color": "#6366f1", "paths": ["~/.kimi"]},
+    {"id": "openclaw", "name": "OpenClaw", "wrap": "openclaw", "scope": "CLI",
+     "icon": "C", "color": "#0d9488", "paths": ["~/.openclaw"]},
+    {"id": "copilot", "name": "GitHub Copilot CLI", "wrap": "copilot",
+     "scope": "CLI", "icon": "H", "color": "#1f6feb", "paths": ["~/.copilot"]},
+    {"id": "cline", "name": "Cline", "mode": "manual", "scope": "VS Code 扩展",
+     "icon": "L", "color": "#2563eb",
+     "paths": ["~/.vscode/extensions",
+               "~/AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev"]},
+    {"id": "continue", "name": "Continue", "mode": "manual", "scope": "VS Code / JetBrains 扩展",
+     "icon": "N", "color": "#059669", "paths": ["~/.continue"]},
+    {"id": "vscode-copilot", "name": "VS Code Copilot", "wrap": "vscode",
+     "mode": "manual", "scope": "VS Code 扩展", "icon": "S", "color": "#3b82f6",
+     "paths": ["~/AppData/Local/Programs/Microsoft VS Code/Code.exe", "~/.vscode"]},
+]
+
+EXTRA_BY_ID = {e["id"]: e for e in EXTRA_AGENTS}
+
+
+def _detect_extra(ent):
+    for p in ent.get("paths", []):
+        if Path(os.path.expanduser(p)).exists():
+            return True
+    return False
+
 
 def _proc_running(name):
     try:
@@ -489,10 +532,23 @@ def snapshot():
         d.setdefault("enabled", False)
         d.setdefault("detail", "未检测到")
         d["manual"] = bool(d.get("manual"))
+        d["mode"] = "guide" if d["manual"] else "switch"
         d["has_restart"] = d["id"] in RESTARTS and (
             RESTARTS[d["id"]]["kind"] == "shell"
             or bool(RESTARTS[d["id"]]["launch"]))
         agents.append(d)
+    for e in EXTRA_AGENTS:
+        installed = _detect_extra(e)
+        mode = e.get("mode", "launch")
+        detail = ("会话经 Headroom 代理启动" if mode == "launch"
+                  else "按指引在扩展设置中填入代理地址")
+        agents.append({"id": e["id"], "name": e["name"], "icon": e["icon"],
+                       "color": e["color"], "scope": e.get("scope", ""), "note": "",
+                       "installed": installed, "enabled": installed,
+                       "detail": detail if installed else "未检测到",
+                       "manual": mode == "manual", "mode": mode,
+                       "has_restart": False})
+    agents.sort(key=lambda d: not d["installed"])  # installed first, stable
     our_pid = load_state().get("proxy_pid")
     alive = proxy_alive()
     if alive and our_pid:
@@ -558,6 +614,24 @@ class Api:
                 return {"ok": False, "error": "代理启动超时，请检查 headroom 安装"}
             return {"ok": True, "message": "代理已启动"}
 
+    def launch_session(self, agent_id):
+        ent = EXTRA_BY_ID.get(agent_id)
+        if not ent or not ent.get("wrap"):
+            return {"ok": False, "error": "该 Agent 不支持会话启动"}
+        if not HEADROOM_EXE.exists():
+            return {"ok": False, "error": "未找到 headroom.exe"}
+        env = os.environ.copy()
+        env["HF_ENDPOINT"] = "https://hf-mirror.com"
+        apply_proxy_env(env)
+        cmd = f'"{HEADROOM_EXE}" wrap {ent["wrap"]}'
+        try:
+            subprocess.Popen(["cmd", "/k", cmd], creationflags=0x00000010,
+                             env=env)  # CREATE_NEW_CONSOLE - visible session
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True,
+                "message": f"已在新终端启动 {ent['name']} 会话（经代理）"}
+
     def open_dashboard(self):
         webbrowser.open(f"http://127.0.0.1:{PORT}/dashboard")
         return {"ok": True}
@@ -609,6 +683,33 @@ class Api:
                 "<button class='mini' onclick=\"pywebview.api.set_zcode_upstream('https://api.z.ai/api/anthropic').then(()=>toast('上游已切换 z.ai 国际'))\">上游：z.ai 国际</button>"
                 "</div>")
             return {"ok": True, "title": "ZCode 接入指引", "html": html}
+        if agent_id in EXTRA_BY_ID:
+            e = EXTRA_BY_ID[agent_id]
+            head = (
+                "<p><b>前提：</b>已安装该工具本体，且代理可用（点击「启动会话」会自动拉起代理）。</p>"
+                f"<p><b>OpenAI 兼容 Base URL：</b><code>{openai_url}</code></p>"
+                f"<p><b>Anthropic Base URL：</b><code>{anthropic_url}</code></p>")
+            if e.get("wrap") == "copilot":
+                extra = ("<p>首次使用先执行 GitHub 授权：<code>headroom copilot-auth login</code>，"
+                         "之后点「启动会话」即可（Copilot 订阅流量经代理压缩转发）。</p>")
+            elif e.get("wrap") == "vscode":
+                extra = ("<p>点击「启动会话」后保持终端窗口开启，VS Code 中的 Copilot 请求会"
+                         "透明经过代理（模型选择器保持不变）。关闭终端即停止。</p>")
+            elif e.get("mode") == "manual":
+                if e["id"] == "cline":
+                    extra = ("<p>VS Code → Cline 侧边栏 → 设置 → API Provider 选择 "
+                             "<b>OpenAI Compatible</b> 或 <b>Anthropic</b>，Base URL 填上方地址，"
+                             "API Key 填你自己的 Key。</p>")
+                elif e["id"] == "continue":
+                    extra = ("<p>编辑 <code>~/.continue/config.yaml</code>，在模型的 "
+                             "<b>apiBase</b> 中填上方 OpenAI 兼容地址。</p>")
+                else:
+                    extra = ("<p>VS Code Copilot 会话由本工具透明接管：点「启动会话」并保持终端开启即可。</p>")
+            else:
+                extra = ("<p>点击卡片上的「启动会话」：会在新终端里通过 <code>headroom wrap</code> "
+                         "启动该工具，所有请求自动经代理压缩，关掉终端即结束。</p>")
+            return {"ok": True, "title": e["name"] + " 接入指引",
+                    "html": head + extra}
         return {"ok": False, "error": "该 Agent 无需指引"}
 
     def get_config(self):
@@ -744,6 +845,7 @@ input:checked+.slider:before{transform:translateX(20px)}
 font-size:11.5px;color:var(--sub);cursor:pointer;flex-shrink:0}
 .mini:hover{border-color:var(--accent);color:var(--accent)}
 .mini:disabled{opacity:.5;cursor:default}
+.primary-mini{border-color:var(--accent);color:var(--accent)}
 .scope{font-size:10px;color:var(--sub);border:1px solid var(--line);border-radius:5px;
 padding:0 6px;margin-left:7px;vertical-align:1px;background:#fafafa;font-weight:500}
 .spin{display:inline-block;width:13px;height:13px;border:2px solid #d1d5db;
@@ -846,7 +948,9 @@ function card(a){
   const dis=!a.installed||anyBusy||a.manual?'locked':'';
   const busyHtml=me?`<span class="busytext"><span class="spin"></span> ${me}</span>`:'';
   const guideBtn=a.installed&&a.manual?`<button class="mini" title="查看接入步骤" onclick="openGuide('${a.id}')">接入指引</button>`:'';
-  const sw=a.manual?'':`<label class="switch ${dis}" title="${a.path||''}">
+  const launchBtn=a.installed&&a.mode==='launch'?`<button class="mini primary-mini" title="在新终端启动经代理的会话" onclick="onLaunch('${a.id}',this)">启动会话</button>
+    <button class="mini" title="查看接入说明" onclick="openGuide('${a.id}')">说明</button>`:'';
+  const sw=a.mode!=='switch'?'':`<label class="switch ${dis}" title="${a.path||''}">
       <input type="checkbox" ${a.enabled?'checked':''} ${a.installed?'':'disabled'}
         onchange="onToggle('${a.id}',this)">
       <span class="slider"></span>
@@ -860,10 +964,18 @@ function card(a){
       <div class="detail">${a.detail||''}${a.note?' · '+a.note:''}</div>
     </div>
     ${a.installed&&a.has_restart?`<button class="mini" title="重启应用以加载新配置" onclick="onRestart('${a.id}','${a.name}',this)">重启 ${a.name}</button>`:''}
+    ${launchBtn}
     ${guideBtn}
     ${busyHtml}
     ${sw}
   </div>`;
+}
+async function onLaunch(id,btn){
+  btn.disabled=true;btn.textContent='启动中…';
+  const r=await pywebview.api.launch_session(id);
+  if(r&&r.ok){toast(r.message||'已启动');}else{toast((r&&r.error)||'启动失败',true);}
+  btn.disabled=false;btn.textContent='启动会话';
+  refresh();
 }
 function fmt(n){return n.toLocaleString('en-US');}
 async function refresh(){
