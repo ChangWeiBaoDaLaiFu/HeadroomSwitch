@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
 APP_NAME = "HeadroomSwitch"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 REPO_URL = "https://github.com/ChangWeiBaoDaLaiFu/HeadroomSwitch"
 
 
@@ -420,15 +420,20 @@ def read_savings():
 
 # ----------------------------------------------------------- agents ----
 AGENTS = [
-    {"id": "claude", "name": "Claude Code", "icon": "C", "color": "#d97757",
+    {"id": "claude", "name": "Claude Code", "scope": "CLI", "note": "桌面版暂不支持接入（Headroom 官方限制），开关仅对新开的 CLI 会话生效",
+     "icon": "C", "color": "#d97757",
      "detect": claude_detect, "set": claude_set},
-    {"id": "codex", "name": "Codex", "icon": "X", "color": "#10a37f",
+    {"id": "codex", "name": "Codex", "scope": "CLI + 桌面版", "note": "",
+     "icon": "X", "color": "#10a37f",
      "detect": codex_detect, "set": codex_set},
-    {"id": "opencode", "name": "OpenCode", "icon": "O", "color": "#5b6cff",
+    {"id": "opencode", "name": "OpenCode", "scope": "CLI + 桌面版", "note": "",
+     "icon": "O", "color": "#5b6cff",
      "detect": opencode_detect, "set": opencode_set},
-    {"id": "zcode", "name": "ZCode", "icon": "Z", "color": "#7c3aed",
+    {"id": "zcode", "name": "ZCode", "scope": "桌面版", "note": "",
+     "icon": "Z", "color": "#7c3aed",
      "detect": zcode_detect, "set": lambda on: None},
-    {"id": "cursor", "name": "Cursor", "icon": "U", "color": "#0ea5e9",
+    {"id": "cursor", "name": "Cursor", "scope": "桌面版", "note": "",
+     "icon": "U", "color": "#0ea5e9",
      "detect": cursor_detect, "set": lambda on: None},
 ]
 
@@ -478,7 +483,8 @@ def snapshot():
     for a in AGENTS:
         d = a["detect"]()
         d.update({"id": a["id"], "name": a["name"], "icon": a["icon"],
-                  "color": a["color"]})
+                  "color": a["color"], "scope": a.get("scope", ""),
+                  "note": a.get("note", "")})
         d.setdefault("installed", False)
         d.setdefault("enabled", False)
         d.setdefault("detail", "未检测到")
@@ -738,6 +744,8 @@ input:checked+.slider:before{transform:translateX(20px)}
 font-size:11.5px;color:var(--sub);cursor:pointer;flex-shrink:0}
 .mini:hover{border-color:var(--accent);color:var(--accent)}
 .mini:disabled{opacity:.5;cursor:default}
+.scope{font-size:10px;color:var(--sub);border:1px solid var(--line);border-radius:5px;
+padding:0 6px;margin-left:7px;vertical-align:1px;background:#fafafa;font-weight:500}
 .spin{display:inline-block;width:13px;height:13px;border:2px solid #d1d5db;
 border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
 vertical-align:-2px}
@@ -846,10 +854,10 @@ function card(a){
   return `<div class="card ${a.installed?'':'off-inst'}">
     <div class="avatar" style="background:${a.color}">${a.icon}</div>
     <div class="meta">
-      <div class="name">${a.name}
+      <div class="name">${a.name}<span class="scope">${a.scope||''}</span>
         <span class="badge ${a.enabled?'':'off'}">${a.installed?(a.enabled?'已接入Headroom':'未接入'):'未检测到'}</span>
       </div>
-      <div class="detail">${a.detail||''}</div>
+      <div class="detail">${a.detail||''}${a.note?' · '+a.note:''}</div>
     </div>
     ${a.installed&&a.has_restart?`<button class="mini" title="重启应用以加载新配置" onclick="onRestart('${a.id}','${a.name}',this)">重启 ${a.name}</button>`:''}
     ${guideBtn}
