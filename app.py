@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
 APP_NAME = "HeadroomSwitch"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 REPO_URL = "https://github.com/ChangWeiBaoDaLaiFu/HeadroomSwitch"
 
 
