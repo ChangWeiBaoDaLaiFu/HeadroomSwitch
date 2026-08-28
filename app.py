@@ -958,9 +958,14 @@ padding:1px 6px;font-size:11.5px;word-break:break-all}
   </div>
 </div>
 <script>
+const ICONS=__ICONS__;
 let busy={};
 function toast(msg,err){const t=document.getElementById('toast');t.textContent=msg;
 t.className=err?'show err':'show';setTimeout(()=>t.className='',2600);}
+function avatar(a){
+  if(ICONS[a.id])return `<img class="avatar" style="object-fit:contain;background:#fff;border:1px solid var(--line);padding:3px" src="${ICONS[a.id]}" alt="">`;
+  return `<div class="avatar" style="background:${a.color}">${a.icon}</div>`;
+}
 function card(a){
   const anyBusy=Object.keys(busy).length>0;
   const me=busy[a.id];
@@ -975,7 +980,7 @@ function card(a){
       <span class="slider"></span>
     </label>`;
   return `<div class="card ${a.installed?'':'off-inst'}">
-    <div class="avatar" style="background:${a.color}">${a.icon}</div>
+    ${avatar(a)}
     <div class="meta">
       <div class="name">${a.name}<span class="scope">${a.scope||''}</span>
         <span class="badge ${a.enabled?'':'off'}">${a.installed?(a.enabled?'已接入Headroom':'未接入'):'未检测到'}</span>
@@ -1093,9 +1098,18 @@ window.addEventListener('DOMContentLoaded',()=>{refresh();setInterval(refresh,25
 </html>"""
 
 
-HTML = HTML.replace("__VER__", APP_VERSION) \
-           .replace("__HEADROOM_URL__", "https://github.com/headroomlabs-ai/headroom") \
-           .replace("__REPO_URL__", REPO_URL)
+# version / URL placeholders are substituted in _final_html() at startup
+
+
+def _final_html():
+    try:
+        icons = json.loads(Path(_res("icons.json")).read_text(encoding="utf-8"))
+    except Exception:
+        icons = {}
+    return (HTML.replace("__ICONS__", json.dumps(icons))
+                .replace("__VER__", APP_VERSION)
+                .replace("__HEADROOM_URL__", "https://github.com/headroomlabs-ai/headroom")
+                .replace("__REPO_URL__", REPO_URL))
 
 
 def _single_instance():
@@ -1111,7 +1125,7 @@ def main():
         return
     # restore proxy on startup if any agent is still enabled (e.g. after reboot)
     threading.Thread(target=sync_proxy, daemon=True).start()
-    win = webview.create_window("Headroom Agent 管理", html=HTML, js_api=Api(),
+    win = webview.create_window("Headroom Agent 管理", html=_final_html(), js_api=Api(),
                                 width=760, height=560, min_size=(660, 480))
 
     def _on_closing():

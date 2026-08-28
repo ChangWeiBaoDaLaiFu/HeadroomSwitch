@@ -24,10 +24,14 @@ jobs:
       - name: Generate icon
         run: python make_icon.py
 
+      - name: Fetch agent icons
+        run: python fetch_icons.py
+        continue-on-error: true
+
       - name: Build EXE
         run: >
           python -m PyInstaller --noconfirm --onefile --windowed --name HeadroomSwitch
-          --icon icon.ico --add-data "icon.ico;."
+          --icon icon.ico --add-data "icon.ico;." --add-data "icons.json;."
           --hidden-import webview.platforms.winforms
           --hidden-import webview.platforms.edgechromium
           --hidden-import pystray --hidden-import pystray._win32
