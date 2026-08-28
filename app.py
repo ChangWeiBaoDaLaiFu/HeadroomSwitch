@@ -828,8 +828,11 @@ background:#fff;border:1px solid var(--line);color:var(--sub)}
 .dot{width:8px;height:8px;border-radius:50%;background:#9ca3af}
 .dot.on{background:var(--green);box-shadow:0 0 0 3px rgba(34,197,94,.18)}
 .dot.ext{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.18)}
-#banner{margin:0 22px 10px;padding:10px 14px;border-radius:10px;font-size:12.5px;
-background:#fef3c7;border:1px solid #fde68a;color:#92400e;display:none}
+#banner{margin:0 22px 10px;padding:12px 16px;border-radius:10px;font-size:13px;
+background:#fef3c7;border:1px solid #fde68a;color:#92400e;display:none;line-height:1.8}
+#banner b{font-size:13.5px}
+#banner code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:5px}
+#banner .mini{margin-left:6px;vertical-align:1px}
 #banner code{background:rgba(0,0,0,.06);padding:1px 6px;border-radius:5px}
 main{flex:1;overflow-y:auto;padding:4px 22px 10px;display:flex;flex-direction:column;gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
@@ -904,7 +907,12 @@ padding:1px 6px;font-size:11.5px;word-break:break-all}
     <button class="linkbtn" onclick="openAbout()">关于</button>
   </div>
 </header>
-<div id="banner">未检测到 <code>headroom</code> CLI，请先安装：<code>uv tool install "headroom-ai[all]"</code> 或 <code>pip install "headroom-ai[all]"</code>（也可在设置中指定路径）</div>
+<div id="banner"><b>本机未安装 Headroom</b> —— 请先安装后再使用本工具。<br>
+方式一：<code>uv tool install "headroom-ai[all]"</code>　方式二：<code>pip install "headroom-ai[all]"</code>
+<button class="mini" onclick="pywebview.api.open_url('https://github.com/headroomlabs-ai/headroom#install')">前往官网安装页</button>
+<button class="mini" onclick="copyInstallCmd(this)">复制安装命令</button>
+<button class="mini" onclick="pywebview.api.open_url('https://headroom-docs.vercel.app/docs')">查看文档</button>
+</div>
 <main id="cards"></main>
 <footer>
   <span id="savetext"></span>
@@ -987,6 +995,12 @@ async function onLaunch(id,btn){
   if(r&&r.ok){toast(r.message||'已启动');}else{toast((r&&r.error)||'启动失败',true);}
   btn.disabled=false;btn.textContent='启动会话';
   refresh();
+}
+function copyInstallCmd(btn){
+  const cmd='uv tool install "headroom-ai[all]"';
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(cmd).then(()=>toast('已复制：'+cmd),()=>toast('复制失败',true));
+  }else{toast('复制失败，请手动选择命令',true);}
 }
 function fmt(n){return n.toLocaleString('en-US');}
 async function refresh(){
