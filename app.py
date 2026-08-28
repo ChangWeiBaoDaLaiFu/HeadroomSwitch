@@ -443,6 +443,16 @@ class Api:
             except Exception as e:
                 return {"ok": False, "error": "重启失败: " + str(e)}
 
+    def start_proxy(self):
+        with _LOCK:
+            if not HEADROOM_EXE.exists():
+                return {"ok": False, "error": "未找到 headroom.exe"}
+            if proxy_alive():
+                return {"ok": True, "message": "代理已在运行"}
+            if not spawn_proxy():
+                return {"ok": False, "error": "代理启动超时，请检查 headroom 安装"}
+            return {"ok": True, "message": "代理已启动"}
+
     def open_dashboard(self):
         webbrowser.open(f"http://127.0.0.1:{PORT}/dashboard")
         return {"ok": True}
@@ -579,6 +589,11 @@ input:checked+.slider:before{transform:translateX(20px)}
 font-size:11.5px;color:var(--sub);cursor:pointer;flex-shrink:0}
 .mini:hover{border-color:var(--accent);color:var(--accent)}
 .mini:disabled{opacity:.5;cursor:default}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid #d1d5db;
+border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
+vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.busytext{font-size:11.5px;color:var(--sub);flex-shrink:0;white-space:nowrap}
 footer{padding:12px 22px 16px;display:flex;align-items:center;gap:10px;
 font-size:12px;color:var(--sub)}
 #savetext{flex:1;color:#15803d;font-weight:600}
@@ -609,6 +624,7 @@ padding:7px 18px;font-size:12.5px;cursor:pointer}
   <h1><span class="logo">H</span>Headroom Agent 管理</h1>
   <div class="hright">
     <div class="pill" id="proxypill"><span class="dot" id="proxydot"></span><span id="proxytext">检测中…</span></div>
+    <button class="linkbtn" id="proxystart" style="display:none" onclick="onProxyStart(this)">启动代理</button>
     <button class="linkbtn" onclick="openSettings()">设置</button>
     <button class="linkbtn" onclick="openAbout()">关于</button>
   </div>
@@ -654,7 +670,10 @@ let busy={};
 function toast(msg,err){const t=document.getElementById('toast');t.textContent=msg;
 t.className=err?'show err':'show';setTimeout(()=>t.className='',2600);}
 function card(a){
-  const dis=!a.installed||busy[a.id]?'locked':'';
+  const anyBusy=Object.keys(busy).length>0;
+  const me=busy[a.id];
+  const dis=!a.installed||anyBusy?'locked':'';
+  const busyHtml=me?`<span class="busytext"><span class="spin"></span> ${me}</span>`:'';
   return `<div class="card ${a.installed?'':'off-inst'}">
     <div class="avatar" style="background:${a.color}">${a.icon}</div>
     <div class="meta">
@@ -664,6 +683,7 @@ function card(a){
       <div class="detail">${a.detail||''}</div>
     </div>
     ${a.installed&&a.has_restart?`<button class="mini" title="重启应用以加载新配置" onclick="onRestart('${a.id}','${a.name}',this)">重启 ${a.name}</button>`:''}
+    ${busyHtml}
     <label class="switch ${dis}" title="${a.path||''}">
       <input type="checkbox" ${a.enabled?'checked':''} ${a.installed?'':'disabled'}
         onchange="onToggle('${a.id}',this)">
@@ -683,14 +703,23 @@ async function refresh(){
   if(p.running&&p.managed){d.className='dot on';t.textContent=`代理运行中 · PID ${p.pid}`;}
   else if(p.running){d.className='dot ext';t.textContent='代理运行中（外部启动）';}
   else{d.className='dot';t.textContent='代理未运行';}
+  document.getElementById('proxystart').style.display=p.running?'none':'';
 }
 async function onToggle(id,el){
-  busy[id]=true;el.parentElement.classList.add('locked');
   const want=el.checked;
+  busy[id]=want?'接入中…':'还原中…';
+  refresh();
   const r=await pywebview.api.toggle(id,want);
-  busy[id]=false;
+  delete busy[id];
   if(!r||!r.ok){toast((r&&r.error)||'操作失败',true);}
   else{toast(want?'已接入 Headroom':'已还原为直连');}
+  refresh();
+}
+async function onProxyStart(btn){
+  btn.disabled=true;btn.textContent='启动中…';
+  const r=await pywebview.api.start_proxy();
+  if(r&&r.ok){toast(r.message||'代理已启动');}else{toast((r&&r.error)||'启动失败',true);}
+  btn.disabled=false;btn.textContent='启动代理';
   refresh();
 }
 async function onRestart(id,name,btn){
