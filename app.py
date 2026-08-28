@@ -643,6 +643,18 @@ class Api:
         return {"ok": True,
                 "message": f"已在新终端启动 {ent['name']} 会话（经代理）"}
 
+    def fit_height(self, delta):
+        """Grow the window so the card list needs no scrollbar (cap: 80% screen)."""
+        global _cur_h
+        with _LOCK:
+            max_h = int(_work_area_height() * 0.8)
+            new_h = min(max_h, _cur_h + max(12, int(delta)))
+            if new_h > _cur_h:
+                _cur_h = new_h
+                if _win:
+                    _win.resize(760, new_h)
+            return {"ok": True}
+
     def open_dashboard(self):
         webbrowser.open(f"http://127.0.0.1:{PORT}/dashboard")
         return {"ok": True}
@@ -1020,6 +1032,17 @@ async function refresh(){
   else if(p.running){d.className='dot ext';t.textContent='代理运行中（外部启动）';}
   else{d.className='dot';t.textContent='代理未运行';}
   document.getElementById('proxystart').style.display=p.running?'none':'';
+  setTimeout(fitHeight,60);
+}
+let fitting=false;
+function fitHeight(){
+  if(fitting)return;
+  const m=document.querySelector('main');
+  const d=m.scrollHeight-m.clientHeight;
+  if(d>2){
+    fitting=true;
+    pywebview.api.fit_height(d+12).then(()=>{fitting=false;setTimeout(fitHeight,350);});
+  }
 }
 async function onToggle(id,el){
   const want=el.checked;
@@ -1118,8 +1141,11 @@ def _single_instance():
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
-def _calc_window_height(n_agents, banner):
-    """Fit content; never exceed 80% of the screen work-area height."""
+_win = None
+_cur_h = 560
+
+
+def _work_area_height():
     import ctypes
 
     class RECT(ctypes.Structure):
@@ -1128,10 +1154,14 @@ def _calc_window_height(n_agents, banner):
 
     rect = RECT()
     ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0)
-    work_h = rect.b - rect.t  # screen minus taskbar
-    max_h = int(work_h * 0.8)
+    return rect.b - rect.t
+
+
+def _calc_window_height(n_agents, banner):
+    """Fit content; never exceed 80% of the screen work-area height."""
+    max_h = int(_work_area_height() * 0.8)
     cards = n_agents * 74 + max(0, n_agents - 1) * 12
-    content = 58 + cards + 48 + (78 if banner else 0)
+    content = 72 + cards + 48 + (78 if banner else 0)
     return max(480, min(content + 32, max_h))
 
 
@@ -1143,10 +1173,13 @@ def main():
     # restore proxy on startup if any agent is still enabled (e.g. after reboot)
     threading.Thread(target=sync_proxy, daemon=True).start()
     snap = snapshot()
-    height = _calc_window_height(len(snap["agents"]),
+    global _cur_h
+    _cur_h = _calc_window_height(len(snap["agents"]),
                                  not snap["headroom_installed"])
     win = webview.create_window("Headroom Agent 管理", html=_final_html(), js_api=Api(),
-                                width=760, height=height, min_size=(660, 480))
+                                width=760, height=_cur_h, min_size=(660, 480))
+    global _win
+    _win = win
 
     def _on_closing():
         global _tray_notified
