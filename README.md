@@ -1,93 +1,123 @@
 # HeadroomSwitch
 
-**Headroom Agent 管理** — 一个为 [Headroom](https://github.com/headroomlabs-ai/headroom) 设计的 Windows 桌面管理工具。扫描本机已安装的 AI 编程 Agent，一键开关 Headroom 上下文压缩代理，关闭时自动还原原始配置。
+**A Windows desktop manager for [Headroom](https://github.com/headroomlabs-ai/headroom)** — scan your locally installed AI coding agents, and toggle Headroom's context-compression proxy per agent with one click. Switch it off and the original configuration is restored automatically.
 
-> Not affiliated with headroomlabs-ai. This is an independent community tool that drives the open-source [`headroom`](https://github.com/headroomlabs-ai/headroom) CLI.
+English | **[中文文档](README_zh.md)**
 
 ![screenshot](screenshots/main.png)
 
-English | [中文](#特性)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/ChangWeiBaoDaLaiFu/HeadroomSwitch)](../../releases)
 
-## 特性
+> **Why:** tool outputs — file reads, test runs, logs — quietly eat most of your token budget. [Headroom](https://github.com/headroomlabs-ai/headroom) compresses all of that locally before it reaches the LLM (same answers, 15–20% fewer tokens for coding agents, 60–95% for JSON, reversible via cache). HeadroomSwitch makes headroom a checkbox instead of a CLI ritual.
 
-- 🔍 **自动扫描**：启动时检测本机的 Claude Code / Codex / OpenCode（CLI 与桌面版均可识别）
-- 🎛️ **一键开关**：每个 Agent 独立开关；开启 = 接入 Headroom 代理压缩，关闭 = **自动还原原始配置**（含备份）
-- ⚙️ **代理全自动**：任一开关打开自动启动本地代理，全部关闭自动停止；重启电脑后自动恢复
-- 🔁 **应用内重启**：内置"重启 Codex / 重启 OpenCode"按钮，配置即改即生效
-- 🪞 **全模型镜像**（OpenCode）：自动为所有供应商的所有模型生成 `headroom-*` 镜像版，按请求路由到各自上游——切换任意模型都能享受压缩
-- 📊 **节省可视化**：页脚实时显示累计压缩节省的 tokens 与美元估算，一键打开 Headroom 节省面板
-- 🖥️ **托盘常驻**：关闭窗口最小化到托盘，左键唤出，右键退出
-- 🔒 **安全还原**：所有配置修改均有备份，开关关闭即精确还原
+> Not affiliated with headroomlabs-ai. An independent, local-first community tool that drives the open-source [`headroom`](https://github.com/headroomlabs-ai/headroom) CLI.
 
-## 工作原理
+## Features
 
-| Agent | 开关开启 | 开关关闭 |
+- **Auto-scan** — detects 17 headroom-compatible agents at launch; only the ones you actually have are shown
+- **One-click toggle** — on = routed through the local compression proxy; off = original config restored from backup, exactly
+- **Zero-touch proxy** — starts automatically when any toggle is on, stops when all are off, auto-restores after reboot
+- **Per-agent scope chips** — cards are labeled `CLI` / `CLI + Desktop` / `Desktop` so you always know what a switch affects
+- **Launch-session buttons** — for CLI tools that integrate via environment (Aider, Goose, Kimi CLI, Grok CLI, OpenHands, Mistral Vibe, Oh My Pi, OpenClaw, GitHub Copilot CLI): one click opens a terminal running `headroom wrap <tool>` with the proxy attached
+- **Guided setup** — Cursor, ZCode, Cline, Continue and VS Code Copilot get step-by-step in-app guides; ZCode includes one-click upstream switching (bigmodel CN / z.ai global)
+- **OpenCode model mirroring** — every provider/model you have gets a `headroom-*` variant with per-request upstream routing; switch models freely
+- **Savings widget** — live lifetime tokens (and $ estimate) saved, plus a link to headroom's dashboard
+- **In-app restarts** — "Restart Codex / OpenCode / ZCode / Cursor" buttons apply config changes instantly
+- **Tray-resident** — closing the window minimizes to tray; auto-start on Windows logon optional
+
+## Supported agents
+
+| Agent | Scope | Integration |
 |---|---|---|
-| **Claude Code** | `settings.json` 的 `ANTHROPIC_BASE_URL` 指向本地代理（原上游自动记忆） | 还原原上游地址 |
-| **Codex** | `config.toml` 写入 `openai_base_url`（桌面版 + CLI 全生效） | 移除该配置 |
-| **OpenCode** | 注入 `headroom-*` 镜像供应商（带 `x-headroom-base-url` 按请求路由头） | 删除全部镜像配置 |
+| Claude Code | CLI | Auto toggle (restore on off) |
+| Codex | CLI + Desktop | Auto toggle |
+| OpenCode | CLI + Desktop | Auto toggle + full model mirroring |
+| ZCode | Desktop | Guide + upstream switcher |
+| Cursor | Desktop | Guide |
+| Cline | VS Code extension | Guide |
+| Continue | VS Code / JetBrains | Guide |
+| VS Code Copilot | VS Code extension | Transparent proxy session |
+| Aider / Grok CLI / Goose / OpenHands / Mistral Vibe / Oh My Pi / Kimi CLI / OpenClaw / GitHub Copilot CLI | CLI | Launch session button |
 
-代理进程以独立后台进程运行，转发请求前完成压缩（SmartCrusher / CodeCompressor / CacheAligner），原始内容本地缓存、可随时取回（Headroom CCR）。
+> Out of scope by design: agents that headroom does not support yet (Devin, Windsurf, Qwen Code, Qoder, CodeBuddy, workBuddy, Google Code Assist).
 
-## 安装
+## How it works
 
-### 前置要求
+| Agent | Switch ON | Switch OFF |
+|---|---|---|
+| Claude Code | `ANTHROPIC_BASE_URL` in `settings.json` points at the local proxy (original upstream remembered) | Original upstream restored |
+| Codex | `openai_base_url` written to `config.toml` (applies to desktop + CLI) | Key removed |
+| OpenCode | `headroom-*` mirror providers injected with an `x-headroom-base-url` per-request routing header | Mirror providers removed |
+| ZCode / Cursor / others | Guide dialog; the proxy forwards to your chosen upstream | Nothing persisted |
+
+The proxy runs as an independent hidden background process. Requests are compressed before forwarding (SmartCrusher / CodeCompressor / CacheAligner); originals stay in a local cache and remain retrievable on demand (headroom CCR).
+
+## Install
+
+### Prerequisites
 
 1. Windows 10/11
-2. 已安装 [Headroom CLI](https://github.com/headroomlabs-ai/headroom)：
+2. The [Headroom CLI](https://github.com/headroomlabs-ai/headroom):
    ```bash
    uv tool install "headroom-ai[all]"
-   # 或
+   # or
    pip install "headroom-ai[all]"
    ```
 
-### 方式一：下载构建产物
+> If the app can't find headroom, a yellow banner appears at the top with install commands and links to the official install page.
 
-从 [Releases](../../releases) 下载 `HeadroomSwitch.exe`，双击即用。
+### Option A: download a build
 
-### 方式二：源码运行
+Grab `HeadroomSwitch.exe` from [Releases](../../releases) — single file, no installer.
+
+### Option B: run from source
 
 ```bash
 pip install -r requirements.txt
 python app.py
 ```
 
-### 从源码构建 EXE
+### Build the EXE yourself
 
 ```bash
 build.bat
 ```
 
-产物位于 `dist/HeadroomSwitch.exe`。
+Output: `dist/HeadroomSwitch.exe`. Tagged versions (`v*`) are also built automatically by GitHub Actions and attached to the release.
 
-## 配置
+## Configuration
 
-设置入口：主窗口右上角 **设置**。配置持久化于 `~/.headroom-switcher/config.json`：
+Open **Settings** in the top-right corner. Persisted at `~/.headroom-switcher/config.json`:
 
-| 字段 | 默认 | 说明 |
+| Key | Default | Description |
 |---|---|---|
-| `port` | `8787` | 本地 Headroom 代理端口（修改需先关闭全部开关） |
-| `network_proxy` | `"auto"` | 访问模型上游的网络代理：`auto` 跟随 Windows 系统代理 / `direct` 直连 / `http://host:port` 自定义 |
-| `headroom_path` | `""` | headroom CLI 路径覆盖（默认 `~/.local/bin/headroom.exe`） |
+| `port` | `8787` | Local headroom proxy port (change only when all switches are off) |
+| `network_proxy` | `"auto"` | Proxy used to reach model upstreams: `auto` = follow the Windows system proxy / `direct` / `http://host:port` |
+| `headroom_path` | `""` | Optional override of the headroom CLI path |
+| `autostart` | `false` | Launch HeadroomSwitch at Windows logon |
 
-## 常见问题
+## FAQ
 
-**开启后 Agent 无法联网？**
-代理进程必须处于运行状态（状态灯为绿色）。管理工具会自动拉起，但如果你手动关闭了代理或重启后尚未打开管理工具，请先启动本工具。
+**An agent can't connect after enabling?**
+The proxy must be running (green status pill). The tool starts it automatically, but after a reboot — or if the proxy was killed manually — open the tool once or use the "Start proxy" button.
 
-**Claude Code 开启后没有立即生效？**
-CLI 配置在**新会话**开始时读取，请退出当前会话后重新启动 `claude`。
+**Claude Code change not taking effect?**
+The CLI reads its config at session start — exit and relaunch `claude`. Claude **Desktop** is not supported by headroom yet (it overrides the base URL), which is why the card is labeled `CLI`.
 
-**OpenCode 开启后模型列表没有变化？**
-需要重启 OpenCode 应用（卡片上有"重启 OpenCode"按钮），并在模型列表中选择 `xxx via Headroom` 版模型。
+**OpenCode model list unchanged?**
+Restart the OpenCode app (use the "Restart OpenCode" button) and pick a `xxx via Headroom` model.
 
-**支持 macOS / Linux 吗？**
-目前仅支持 Windows。核心逻辑是纯 Python + 路径操作，欢迎 PR 补充跨平台支持（macOS 的代理检测、`open`/`xdg-open` 启动方式等）。
+**Does it send my code anywhere?**
+No. Compression and caching happen locally; the proxy only forwards requests to your configured upstream, exactly like the agents do without it.
 
-## 致谢
+**macOS / Linux?**
+Windows only for now. The core is plain Python + path handling — PRs for cross-platform support (proxy detection, `open`/`xdg-open` launching) are welcome.
 
-- [Headroom](https://github.com/headroomlabs-ai/headroom) — 本工具管理的一切能力的来源（Apache-2.0）
-- [cc-switch](https://github.com/farion1231/cc-switch) — UI 风格参考
+## Acknowledgements
+
+- [Headroom](https://github.com/headroomlabs-ai/headroom) — the engine this tool manages (Apache-2.0)
+- [cc-switch](https://github.com/farion1231/cc-switch) — UI inspiration
 
 ## License
 
