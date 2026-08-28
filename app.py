@@ -1118,6 +1118,23 @@ def _single_instance():
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
+def _calc_window_height(n_agents, banner):
+    """Fit content; never exceed 80% of the screen work-area height."""
+    import ctypes
+
+    class RECT(ctypes.Structure):
+        _fields_ = [("l", ctypes.c_long), ("t", ctypes.c_long),
+                    ("r", ctypes.c_long), ("b", ctypes.c_long)]
+
+    rect = RECT()
+    ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0)
+    work_h = rect.b - rect.t  # screen minus taskbar
+    max_h = int(work_h * 0.8)
+    cards = n_agents * 74 + max(0, n_agents - 1) * 12
+    content = 58 + cards + 48 + (78 if banner else 0)
+    return max(480, min(content + 32, max_h))
+
+
 def main():
     if not _single_instance():
         import ctypes
@@ -1125,8 +1142,11 @@ def main():
         return
     # restore proxy on startup if any agent is still enabled (e.g. after reboot)
     threading.Thread(target=sync_proxy, daemon=True).start()
+    snap = snapshot()
+    height = _calc_window_height(len(snap["agents"]),
+                                 not snap["headroom_installed"])
     win = webview.create_window("Headroom Agent 管理", html=_final_html(), js_api=Api(),
-                                width=760, height=560, min_size=(660, 480))
+                                width=760, height=height, min_size=(660, 480))
 
     def _on_closing():
         global _tray_notified
