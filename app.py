@@ -490,24 +490,34 @@ EXTRA_AGENTS = [
     {"id": "openclaw", "name": "OpenClaw", "wrap": "openclaw", "scope": "CLI",
      "icon": "C", "color": "#0d9488", "paths": ["~/.openclaw"]},
     {"id": "copilot", "name": "GitHub Copilot CLI", "wrap": "copilot",
-     "scope": "CLI", "icon": "H", "color": "#1f6feb", "paths": ["~/.copilot"]},
+     "scope": "CLI", "icon": "H", "color": "#1f6feb",
+     "detect_cmd": "copilot"},
     {"id": "cline", "name": "Cline", "mode": "manual", "scope": "VS Code 扩展",
      "icon": "L", "color": "#2563eb",
-     "paths": ["~/.vscode/extensions",
+     "paths": ["~/.vscode/extensions/saoudrizwan.claude-dev*",
                "~/AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev"]},
     {"id": "continue", "name": "Continue", "mode": "manual", "scope": "VS Code / JetBrains 扩展",
      "icon": "N", "color": "#059669", "paths": ["~/.continue"]},
     {"id": "vscode-copilot", "name": "VS Code Copilot", "wrap": "vscode",
      "mode": "manual", "scope": "VS Code 扩展", "icon": "S", "color": "#3b82f6",
-     "paths": ["~/AppData/Local/Programs/Microsoft VS Code/Code.exe", "~/.vscode"]},
+     "paths": ["~/.vscode/extensions/github.copilot-*"]},
 ]
 
 EXTRA_BY_ID = {e["id"]: e for e in EXTRA_AGENTS}
 
 
 def _detect_extra(ent):
+    cmd = ent.get("detect_cmd")
+    if cmd:
+        import shutil
+        return shutil.which(cmd) is not None
     for p in ent.get("paths", []):
-        if Path(os.path.expanduser(p)).exists():
+        p = os.path.expanduser(p)
+        if any(ch in p for ch in "*?["):
+            import glob as _glob
+            if _glob.glob(p):
+                return True
+        elif Path(p).exists():
             return True
     return False
 
