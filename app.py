@@ -33,7 +33,11 @@ DEFAULT_CONFIG = {
     "port": 8787,
     "network_proxy": "auto",  # "auto" (follow system proxy) | "direct" | "http://host:port"
     "headroom_path": "",      # optional override of the headroom CLI path
+    "autostart": False,       # launch this tool at Windows logon
 }
+
+APP_NAME = "HeadroomSwitch"
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 APP_VERSION = "1.0.0"
 REPO_URL = "https://github.com/ChangWeiBaoDaLaiFu/HeadroomSwitch"
@@ -109,6 +113,35 @@ def apply_proxy_env(env):
             env[k] = addr
         else:
             env.pop(k, None)
+
+
+# ------------------------------------------------------- autostart ----
+def _autostart_command():
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    return f'"{sys.executable}" "{Path(__file__).resolve()}"'
+
+
+def autostart_enabled():
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            winreg.QueryValueEx(k, APP_NAME)
+        return True
+    except Exception:
+        return False
+
+
+def set_autostart(on):
+    import winreg
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+        if on:
+            winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, _autostart_command())
+        else:
+            try:
+                winreg.DeleteValue(k, APP_NAME)
+            except FileNotFoundError:
+                pass
 
 
 # ------------------------------------------------------------- claude ----
@@ -463,7 +496,8 @@ class Api:
         return {"ok": True}
 
     def get_config(self):
-        return {"port": PORT, "network_proxy": CONFIG.get("network_proxy", "auto")}
+        return {"port": PORT, "network_proxy": CONFIG.get("network_proxy", "auto"),
+                "autostart": autostart_enabled()}
 
     def save_config(self, cfg):
         with _LOCK:
@@ -482,6 +516,11 @@ class Api:
                 return {"ok": False, "error": "网络代理格式应为 auto / direct / http://地址"}
             hp = str(cfg.get("headroom_path", "") or "").strip()
             CONFIG.update({"port": port, "network_proxy": mode, "headroom_path": hp})
+            if "autostart" in cfg:
+                want = bool(cfg["autostart"])
+                if want != autostart_enabled():
+                    set_autostart(want)
+                CONFIG["autostart"] = want
             STATE_DIR.mkdir(parents=True, exist_ok=True)
             CONFIG_FILE.write_text(json.dumps(CONFIG, ensure_ascii=False, indent=2),
                                    encoding="utf-8")
@@ -649,6 +688,10 @@ padding:7px 18px;font-size:12.5px;cursor:pointer}
       <option value="custom">自定义地址</option>
     </select>
     <input id="cfg_custom" placeholder="http://127.0.0.1:7897" style="display:none;margin-top:6px">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;font-size:12.5px;color:var(--text)">
+      <input id="cfg_autostart" type="checkbox" style="width:auto">
+      开机自启动（登录后自动运行本工具并恢复代理）
+    </label>
     <div class="mrow">
       <button class="linkbtn" onclick="closeModal()">取消</button>
       <button class="primary" onclick="saveCfg()">保存</button>
@@ -740,6 +783,7 @@ function openSettings(){
   document.getElementById('m_settings').style.display='block';
   pywebview.api.get_config().then(c=>{
     document.getElementById('cfg_port').value=c.port;
+    document.getElementById('cfg_autostart').checked=!!c.autostart;
     const m=c.network_proxy;
     if(m==='auto'||m==='direct'){document.getElementById('cfg_mode').value=m;
       document.getElementById('cfg_custom').style.display='none';}
@@ -758,7 +802,8 @@ async function saveCfg(){
   if(mode==='custom')mode=document.getElementById('cfg_custom').value.trim()||'auto';
   const r=await pywebview.api.save_config({
     port:parseInt(document.getElementById('cfg_port').value||'8787'),
-    network_proxy:mode});
+    network_proxy:mode,
+    autostart:document.getElementById('cfg_autostart').checked});
   if(r&&r.ok){toast('设置已保存');closeModal();}else{toast((r&&r.error)||'保存失败',true);}
   refresh();
 }
