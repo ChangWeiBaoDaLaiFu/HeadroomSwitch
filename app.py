@@ -28,6 +28,10 @@ SAVINGS_FILE = HOME / ".headroom" / "proxy_savings.json"
 CLAUDE_SETTINGS = HOME / ".claude" / "settings.json"
 CODEX_CONFIG = HOME / ".codex" / "config.toml"
 OPENCODE_CONFIG = HOME / ".config" / "opencode" / "opencode.json"
+ZCODE_CONFIG = HOME / ".zcode" / "v2" / "config.json"
+CURSOR_DIR = HOME / ".cursor"
+
+ZAI_ANTHROPIC_DEFAULT = "https://api.z.ai/api/anthropic"
 
 DEFAULT_CONFIG = {
     "port": 8787,
@@ -39,7 +43,7 @@ DEFAULT_CONFIG = {
 APP_NAME = "HeadroomSwitch"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.0"
 REPO_URL = "https://github.com/ChangWeiBaoDaLaiFu/HeadroomSwitch"
 
 
@@ -291,6 +295,39 @@ def opencode_default_upstream():
     return None
 
 
+# ------------------------------------------------- zcode / cursor ----
+def zcode_detect():
+    if not ZCODE_CONFIG.exists():
+        return {"installed": False}
+    try:
+        data = json.loads(ZCODE_CONFIG.read_text(encoding="utf-8"))
+    except Exception:
+        return {"installed": False}
+    integrated = False
+    for p in (data.get("provider") or {}).values():
+        if str((p.get("options") or {}).get("baseURL", "")).startswith(
+                f"http://127.0.0.1:{PORT}"):
+            integrated = True
+            break
+    detail = ("已接入（自定义供应商指向本地代理）" if integrated
+              else "手动接入：按指引把供应商 BaseURL 填为本地代理")
+    return {"installed": True, "enabled": integrated, "manual": True,
+            "detail": detail, "path": str(ZCODE_CONFIG)}
+
+
+def zcode_manual_upstream():
+    state = load_state()
+    return (state.get("agents", {}).get("zcode", {}) or {}).get("upstream") or None
+
+
+def cursor_detect():
+    if not CURSOR_DIR.exists():
+        return {"installed": False}
+    detail = "手动接入：在 Cursor 设置中把 Override Base URL 填为本地代理"
+    return {"installed": True, "enabled": False, "manual": True,
+            "detail": detail, "path": str(CURSOR_DIR)}
+
+
 # ---------------------------------------------------------------- proxy ----
 def proxy_alive():
     try:
@@ -306,7 +343,7 @@ def spawn_proxy():
     # mirror index only helps users behind GFW; harmless elsewhere
     env["HF_ENDPOINT"] = "https://hf-mirror.com"
     apply_proxy_env(env)
-    up = claude_upstream()
+    up = claude_upstream() or zcode_manual_upstream()
     if up:
         env["ANTHROPIC_TARGET_API_URL"] = up
     else:
@@ -351,7 +388,8 @@ def stop_proxy():
 
 def sync_proxy():
     any_on = any(d.get("enabled") for d in
-                 (claude_detect(), codex_detect(), opencode_detect()))
+                 (claude_detect(), codex_detect(), opencode_detect(),
+                  zcode_detect()))
     if not HEADROOM_EXE.exists():
         return {"ok": False, "error": "未找到 headroom.exe"}
     our_pid = load_state().get("proxy_pid")
@@ -388,9 +426,22 @@ AGENTS = [
      "detect": codex_detect, "set": codex_set},
     {"id": "opencode", "name": "OpenCode", "icon": "O", "color": "#5b6cff",
      "detect": opencode_detect, "set": opencode_set},
+    {"id": "zcode", "name": "ZCode", "icon": "Z", "color": "#7c3aed",
+     "detect": zcode_detect, "set": lambda on: None},
+    {"id": "cursor", "name": "Cursor", "icon": "U", "color": "#0ea5e9",
+     "detect": cursor_detect, "set": lambda on: None},
 ]
 
 LOCALAPPDATA = os.environ.get("LOCALAPPDATA", "")
+
+
+def _find_exe(candidates):
+    for c in candidates:
+        if c and Path(c).exists():
+            return c
+    return ""
+
+
 RESTARTS = {
     "codex": {"procs": ["ChatGPT", "Codex"],
               "launch": "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App",
@@ -398,6 +449,18 @@ RESTARTS = {
     "opencode": {"procs": ["OpenCode"],
                  "launch": LOCALAPPDATA + r"\Programs\@opencode-aidesktop\OpenCode.exe",
                  "kind": "exe", "label": "OpenCode 桌面版"},
+    "zcode": {"procs": ["ZCode"],
+              "launch": _find_exe([
+                  r"D:\Program Files\ZCode\ZCode.exe",
+                  r"C:\Program Files\ZCode\ZCode.exe",
+                  LOCALAPPDATA + r"\Programs\ZCode\ZCode.exe"]),
+              "kind": "exe", "label": "ZCode 桌面版"},
+    "cursor": {"procs": ["Cursor"],
+               "launch": _find_exe([
+                   r"D:\Program Files\cursor\Cursor.exe",
+                   LOCALAPPDATA + r"\Programs\cursor\Cursor.exe",
+                   r"C:\Program Files\cursor\Cursor.exe"]),
+               "kind": "exe", "label": "Cursor"},
 }
 
 
@@ -419,7 +482,10 @@ def snapshot():
         d.setdefault("installed", False)
         d.setdefault("enabled", False)
         d.setdefault("detail", "未检测到")
-        d["has_restart"] = d["id"] in RESTARTS
+        d["manual"] = bool(d.get("manual"))
+        d["has_restart"] = d["id"] in RESTARTS and (
+            RESTARTS[d["id"]]["kind"] == "shell"
+            or bool(RESTARTS[d["id"]]["launch"]))
         agents.append(d)
     our_pid = load_state().get("proxy_pid")
     alive = proxy_alive()
@@ -494,6 +560,50 @@ class Api:
         if url.startswith("http://") or url.startswith("https://"):
             webbrowser.open(url)
         return {"ok": True}
+
+    def set_zcode_upstream(self, url):
+        with _LOCK:
+            if not url.startswith("http"):
+                return {"ok": False, "error": "无效地址"}
+            state = load_state()
+            state.setdefault("agents", {}).setdefault("zcode", {})["upstream"] = url
+            save_state(state)
+            if proxy_alive() and load_state().get("proxy_pid"):
+                stop_proxy()
+            sync_proxy()
+            return {"ok": True, "message": "上游已切换为 " + url}
+
+    def get_guide(self, agent_id):
+        openai_url = PROXY_URL + "/v1"
+        anthropic_url = PROXY_URL
+        if agent_id == "cursor":
+            html = (
+                "<p><b>前提：</b>代理状态灯为绿色（未运行请先点「启动代理」）。</p>"
+                "<p><b>1.</b> 打开 Cursor 设置（Ctrl+Shift+J）→ <b>Models</b> 页签。</p>"
+                "<p><b>2.</b> 在 <b>OpenAI API Key</b> 区域：</p>"
+                f"<p>· 勾选 <b>Override OpenAI Base URL</b>，填 <code>{openai_url}</code></p>"
+                "<p>· API Key 填你自己的任意 OpenAI 兼容 Key</p>"
+                "<p><b>3.</b> 勾选需要的模型，点击 Verify。</p>"
+                "<p class='mnote'>Anthropic 模型如需走代理：把 Anthropic Base URL 填为 "
+                f"<code>{anthropic_url}</code>（新版 Cursor 支持）。Cursor 不支持自定义请求头，"
+                "上游请在本工具「ZCode/Cursor 上游」中选择或默认。</p>")
+            return {"ok": True, "title": "Cursor 接入指引", "html": html}
+        if agent_id == "zcode":
+            cur = zcode_manual_upstream() or ZAI_ANTHROPIC_DEFAULT
+            html = (
+                "<p><b>前提：</b>代理状态灯为绿色。</p>"
+                "<p><b>1.</b> 打开 ZCode 设置 → 模型服务 / 供应商。</p>"
+                "<p><b>2.</b> 新建/编辑自定义供应商（类型 <b>anthropic</b>）：</p>"
+                f"<p>· BaseURL 填 <code>{anthropic_url}</code></p>"
+                "<p>· API Key 填你的智谱 Key</p>"
+                "<p><b>3.</b> 选择该供应商后即可使用（工具会自动识别为已接入）。</p>"
+                "<p class='mnote'>上游转发地址当前为：<code>" + cur + "</code></p>"
+                "<div class='mrow' style='justify-content:flex-start'>"
+                "<button class='mini' onclick=\"pywebview.api.set_zcode_upstream('https://open.bigmodel.cn/api/anthropic').then(()=>toast('上游已切换 智谱国内'))\">上游：智谱国内 bigmodel</button>"
+                "<button class='mini' onclick=\"pywebview.api.set_zcode_upstream('https://api.z.ai/api/anthropic').then(()=>toast('上游已切换 z.ai 国际'))\">上游：z.ai 国际</button>"
+                "</div>")
+            return {"ok": True, "title": "ZCode 接入指引", "html": html}
+        return {"ok": False, "error": "该 Agent 无需指引"}
 
     def get_config(self):
         return {"port": PORT, "network_proxy": CONFIG.get("network_proxy", "auto"),
@@ -656,6 +766,11 @@ padding:7px 10px;font-size:13px;outline:none}
 .mrow{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
 .mrow .primary{background:var(--accent);border:none;color:#fff;border-radius:8px;
 padding:7px 18px;font-size:12.5px;cursor:pointer}
+.about p{font-size:12.5px;line-height:1.7;margin-bottom:8px;color:var(--text)}
+.about code{background:#f3f4f6;border:1px solid var(--line);border-radius:5px;
+padding:1px 6px;font-size:11.5px;word-break:break-all}
+.about a{color:var(--accent);text-decoration:none}
+.mnote{font-size:11.5px;color:var(--sub)}
 </style>
 </head>
 <body>
@@ -707,6 +822,11 @@ padding:7px 18px;font-size:12.5px;cursor:pointer}
     </div>
     <div class="mrow"><button class="primary" onclick="closeModal()">关闭</button></div>
   </div>
+  <div class="mcard" id="m_guide" style="display:none">
+    <h3 id="guide_title">接入指引</h3>
+    <div class="about" id="guide_html"></div>
+    <div class="mrow"><button class="primary" onclick="closeModal()">关闭</button></div>
+  </div>
 </div>
 <script>
 let busy={};
@@ -715,8 +835,14 @@ t.className=err?'show err':'show';setTimeout(()=>t.className='',2600);}
 function card(a){
   const anyBusy=Object.keys(busy).length>0;
   const me=busy[a.id];
-  const dis=!a.installed||anyBusy?'locked':'';
+  const dis=!a.installed||anyBusy||a.manual?'locked':'';
   const busyHtml=me?`<span class="busytext"><span class="spin"></span> ${me}</span>`:'';
+  const guideBtn=a.installed&&a.manual?`<button class="mini" title="查看接入步骤" onclick="openGuide('${a.id}')">接入指引</button>`:'';
+  const sw=a.manual?'':`<label class="switch ${dis}" title="${a.path||''}">
+      <input type="checkbox" ${a.enabled?'checked':''} ${a.installed?'':'disabled'}
+        onchange="onToggle('${a.id}',this)">
+      <span class="slider"></span>
+    </label>`;
   return `<div class="card ${a.installed?'':'off-inst'}">
     <div class="avatar" style="background:${a.color}">${a.icon}</div>
     <div class="meta">
@@ -726,12 +852,9 @@ function card(a){
       <div class="detail">${a.detail||''}</div>
     </div>
     ${a.installed&&a.has_restart?`<button class="mini" title="重启应用以加载新配置" onclick="onRestart('${a.id}','${a.name}',this)">重启 ${a.name}</button>`:''}
+    ${guideBtn}
     ${busyHtml}
-    <label class="switch ${dis}" title="${a.path||''}">
-      <input type="checkbox" ${a.enabled?'checked':''} ${a.installed?'':'disabled'}
-        onchange="onToggle('${a.id}',this)">
-      <span class="slider"></span>
-    </label>
+    ${sw}
   </div>`;
 }
 function fmt(n){return n.toLocaleString('en-US');}
@@ -775,11 +898,23 @@ async function onRestart(id,name,btn){
 function closeModal(){document.getElementById('modal').classList.remove('open');}
 function openAbout(){
   document.getElementById('m_settings').style.display='none';
+  document.getElementById('m_guide').style.display='none';
   document.getElementById('m_about').style.display='block';
+  document.getElementById('modal').classList.add('open');
+}
+async function openGuide(id){
+  const g=await pywebview.api.get_guide(id);
+  if(!g||!g.ok){toast((g&&g.error)||'无指引',true);return;}
+  document.getElementById('m_settings').style.display='none';
+  document.getElementById('m_about').style.display='none';
+  document.getElementById('m_guide').style.display='block';
+  document.getElementById('guide_title').textContent=g.title;
+  document.getElementById('guide_html').innerHTML=g.html;
   document.getElementById('modal').classList.add('open');
 }
 function openSettings(){
   document.getElementById('m_about').style.display='none';
+  document.getElementById('m_guide').style.display='none';
   document.getElementById('m_settings').style.display='block';
   pywebview.api.get_config().then(c=>{
     document.getElementById('cfg_port').value=c.port;
