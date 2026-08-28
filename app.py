@@ -558,6 +558,7 @@ def snapshot():
                        "detail": detail if installed else "未检测到",
                        "manual": mode == "manual", "mode": mode,
                        "has_restart": False})
+    agents = [d for d in agents if d.get("installed")]  # hide undetected
     agents.sort(key=lambda d: not d["installed"])  # installed first, stable
     our_pid = load_state().get("proxy_pid")
     alive = proxy_alive()
